@@ -180,6 +180,260 @@ async def get_status_checks():
     
     return status_checks
 
+# Market Stand API Endpoints
+
+@api_router.get("/market-stands", response_model=List[MarketStand])
+async def get_market_stands():
+    """Get all market stands"""
+    stands = []
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, owner_id, owner_name, name, location, zone_id, status, 
+                       rent_expires, created_at, updated_at, earnings, total_sales 
+                FROM market_stands 
+                ORDER BY created_at DESC
+            """)
+            results = cursor.fetchall()
+            
+            for row in results:
+                if row['location']:
+                    location_data = json.loads(row['location'])
+                    row['location'] = MarketStandLocation(**location_data)
+                stands.append(MarketStand(**row))
+                
+        except Error as e:
+            print(f"Error fetching market stands: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return stands
+
+@api_router.get("/market-stands/{stand_id}", response_model=MarketStand)
+async def get_market_stand(stand_id: int):
+    """Get a specific market stand"""
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, owner_id, owner_name, name, location, zone_id, status, 
+                       rent_expires, created_at, updated_at, earnings, total_sales 
+                FROM market_stands 
+                WHERE id = %s
+            """, (stand_id,))
+            result = cursor.fetchone()
+            
+            if result:
+                if result['location']:
+                    location_data = json.loads(result['location'])
+                    result['location'] = MarketStandLocation(**location_data)
+                return MarketStand(**result)
+                
+        except Error as e:
+            print(f"Error fetching market stand: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return None
+
+@api_router.get("/market-stands/{stand_id}/items", response_model=List[MarketStandItem])
+async def get_stand_items(stand_id: int):
+    """Get items for a specific market stand"""
+    items = []
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, stand_id, item_name, display_name, price, stock, max_stock, 
+                       description, created_at, updated_at 
+                FROM market_stand_items 
+                WHERE stand_id = %s
+                ORDER BY created_at DESC
+            """, (stand_id,))
+            results = cursor.fetchall()
+            items = [MarketStandItem(**row) for row in results]
+                
+        except Error as e:
+            print(f"Error fetching stand items: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return items
+
+@api_router.get("/market-stands/{stand_id}/staff", response_model=List[MarketStandStaff])
+async def get_stand_staff(stand_id: int):
+    """Get staff for a specific market stand"""
+    staff = []
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, stand_id, player_id, player_name, role, wage_per_hour, 
+                       working_hours, hired_at, is_active 
+                FROM market_stand_staff 
+                WHERE stand_id = %s AND is_active = 1
+                ORDER BY hired_at DESC
+            """, (stand_id,))
+            results = cursor.fetchall()
+            
+            for row in results:
+                if row['working_hours']:
+                    row['working_hours'] = json.loads(row['working_hours'])
+                staff.append(MarketStandStaff(**row))
+                
+        except Error as e:
+            print(f"Error fetching stand staff: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return staff
+
+@api_router.get("/market-stands/{stand_id}/transactions", response_model=List[MarketStandTransaction])
+async def get_stand_transactions(stand_id: int, limit: int = 50):
+    """Get transactions for a specific market stand"""
+    transactions = []
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, stand_id, player_id, player_name, transaction_type, 
+                       item_name, quantity, amount, description, created_at 
+                FROM market_stand_transactions 
+                WHERE stand_id = %s
+                ORDER BY created_at DESC 
+                LIMIT %s
+            """, (stand_id, limit))
+            results = cursor.fetchall()
+            transactions = [MarketStandTransaction(**row) for row in results]
+                
+        except Error as e:
+            print(f"Error fetching stand transactions: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return transactions
+
+@api_router.get("/dashboard/stats", response_model=DashboardStats)
+async def get_dashboard_stats():
+    """Get dashboard statistics"""
+    stats = DashboardStats(
+        total_stands=0,
+        active_stands=0,
+        total_earnings=0,
+        total_transactions=0,
+        recent_transactions=[]
+    )
+    
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            
+            # Get stand counts
+            cursor.execute("SELECT COUNT(*) as total FROM market_stands")
+            result = cursor.fetchone()
+            stats.total_stands = result['total'] if result else 0
+            
+            cursor.execute("SELECT COUNT(*) as active FROM market_stands WHERE status = 'active'")
+            result = cursor.fetchone()
+            stats.active_stands = result['active'] if result else 0
+            
+            # Get total earnings
+            cursor.execute("SELECT SUM(earnings) as total_earnings FROM market_stands")
+            result = cursor.fetchone()
+            stats.total_earnings = result['total_earnings'] if result and result['total_earnings'] else 0
+            
+            # Get transaction count
+            cursor.execute("SELECT COUNT(*) as total FROM market_stand_transactions")
+            result = cursor.fetchone()
+            stats.total_transactions = result['total'] if result else 0
+            
+            # Get recent transactions
+            cursor.execute("""
+                SELECT id, stand_id, player_id, player_name, transaction_type, 
+                       item_name, quantity, amount, description, created_at 
+                FROM market_stand_transactions 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            """)
+            results = cursor.fetchall()
+            stats.recent_transactions = [MarketStandTransaction(**row) for row in results]
+                
+        except Error as e:
+            print(f"Error fetching dashboard stats: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return stats
+
+@api_router.delete("/market-stands/{stand_id}")
+async def delete_market_stand(stand_id: int):
+    """Delete a market stand (Admin only)"""
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM market_stands WHERE id = %s", (stand_id,))
+            connection.commit()
+            
+            if cursor.rowcount > 0:
+                return {"message": "Market stand deleted successfully"}
+            else:
+                return {"error": "Market stand not found"}
+                
+        except Error as e:
+            print(f"Error deleting market stand: {e}")
+            return {"error": "Failed to delete market stand"}
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return {"error": "Database connection failed"}
+
+@api_router.put("/market-stands/{stand_id}/status")
+async def update_stand_status(stand_id: int, status: str):
+    """Update market stand status (Admin only)"""
+    valid_statuses = ['active', 'inactive', 'expired', 'suspended']
+    if status not in valid_statuses:
+        return {"error": "Invalid status"}
+    
+    connection = get_mysql_connection()
+    if connection:
+        try:
+            cursor = connection.cursor()
+            cursor.execute("""
+                UPDATE market_stands 
+                SET status = %s, updated_at = NOW() 
+                WHERE id = %s
+            """, (status, stand_id))
+            connection.commit()
+            
+            if cursor.rowcount > 0:
+                return {"message": f"Market stand status updated to {status}"}
+            else:
+                return {"error": "Market stand not found"}
+                
+        except Error as e:
+            print(f"Error updating stand status: {e}")
+            return {"error": "Failed to update stand status"}
+        finally:
+            cursor.close()
+            connection.close()
+    
+    return {"error": "Database connection failed"}
+
 # Include the router in the main app
 app.include_router(api_router)
 
