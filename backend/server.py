@@ -47,6 +47,84 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+# Market Stand Models
+class MarketStandLocation(BaseModel):
+    x: float
+    y: float
+    z: float
+    h: float
+
+class MarketStand(BaseModel):
+    id: Optional[int] = None
+    owner_id: str
+    owner_name: str
+    name: str
+    location: MarketStandLocation
+    zone_id: Optional[int] = None
+    status: str = "active"
+    rent_expires: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    earnings: int = 0
+    total_sales: int = 0
+
+class MarketStandCreate(BaseModel):
+    owner_id: str
+    name: str
+    location: MarketStandLocation
+    zone_id: Optional[int] = None
+
+class MarketStandItem(BaseModel):
+    id: Optional[int] = None
+    stand_id: int
+    item_name: str
+    display_name: str
+    price: int
+    stock: int
+    max_stock: int = 100
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class MarketStandItemCreate(BaseModel):
+    stand_id: int
+    item_name: str
+    display_name: str
+    price: int
+    stock: int
+    max_stock: int = 100
+    description: Optional[str] = None
+
+class MarketStandStaff(BaseModel):
+    id: Optional[int] = None
+    stand_id: int
+    player_id: str
+    player_name: str
+    role: str = "seller"
+    wage_per_hour: int = 50
+    working_hours: dict
+    hired_at: Optional[datetime] = None
+    is_active: bool = True
+
+class MarketStandTransaction(BaseModel):
+    id: Optional[int] = None
+    stand_id: int
+    player_id: str
+    player_name: str
+    transaction_type: str
+    item_name: Optional[str] = None
+    quantity: int = 1
+    amount: int
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class DashboardStats(BaseModel):
+    total_stands: int
+    active_stands: int
+    total_earnings: int
+    total_transactions: int
+    recent_transactions: List[MarketStandTransaction]
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
